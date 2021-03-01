@@ -106,7 +106,7 @@ async def play(ctx, *, arg):
 
     meme = arg.lower()
 
-    if meme not in mDict[clip[0]]:
+    if meme not in mDict[meme[0]]:
         await ctx.send(":stop_sign: **ERROR 404**")
         play.reset_cooldown(ctx)
     elif not ctx.author.voice:
