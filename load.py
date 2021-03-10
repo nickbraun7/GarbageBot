@@ -10,7 +10,7 @@ def token(): #load discord token
 
 def memes(): #load dictionary of memes
     with open("memes.txt", "r") as fp:
-        dic = {new_list: [] for new_list in string.ascii_lowercase}
+        dic = {new_list: [] for new_list in string.ascii_uppercase}
         loadDic(dic, fp)
     return dic
 

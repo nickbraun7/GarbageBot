@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import random, string, datetime, time
+import random, string, datetime, difflib
 
 import discord, asyncio
 import youtube_dl
@@ -9,36 +9,63 @@ from discord.ext import commands
 
 import load, update
 
+DiscordToken = load.token()
+OwnerID = 124686030631731203
+
 update.update()
 print("Files Have Been Updated")
-
-DiscordToken = load.token()
 
 mDict = load.memes() #load dictionary of memes
 sList = load.stops() #load list of stops
 
+class guild_info():
+    PlayFlag = False
+    MuteFlag = False
+    voice = False
+    queue = []
+
+guilds = {}
+
 client = commands.Bot(command_prefix='>')
 client.remove_command("help") #remove help to add custom help command
-    
+
 @client.event
 async def on_ready():
+    for guild in client.guilds:
+        guilds[guild.id] = guild_info()
+
+    await client.change_presence(activity=discord.Game("Spiting Meme's Since 1976! | >help"))
+
     print("Garbage Bot Operational")
 
-    global PlayFlag, voice, queue_list
-    PlayFlag = False #flag to keep track if the bot is playing or not
-    voice = False #current connceted voice channel
-    queue_list = [] #list of memes in the queue
+@client.event
+async def on_guild_join(guild):
+    guilds[guild.id] = guild_info()
 
-    await client.change_presence(status=discord.Status.online, activity=discord.Game("Spiting Meme's since 1976! | "))
+@client.event
+async def on_guild_remove(guild):
+    guilds.pop(guild.id)
+
+@client.event
+async def on_disconnect():
+    for guild, guild_info in guilds.items():
+        guild_info.PlayFlag = False
+        guild_info.voice = False
+        guild_info.queue = []
 
 @client.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        await ctx.send(":stop_sign: command not found")
+        await ctx.send(":stop_sign: **Command Not Found**")
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(":stop_sign: meme required")
+        await ctx.send(":stop_sign: **Invalied Argument**")
     elif isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(":stop_sign: Aye do you have a license for that? Try again after " + await convert(error.retry_after) + ".")
+        await ctx.send(":stop_sign: **Aye do you have a license for that?** Try again after " + convert(error.retry_after) + ".")
+    elif isinstance(error, commands.MissingRole):
+        await ctx.send(":stop_sign: **Role Required: **" + error.missing_role)
+    elif isinstance(error, commands.NotOwner):
+        await ctx.send(":stop_sign: **You think you have the power!**")
+
     raise error
 
 @client.command()
@@ -49,8 +76,6 @@ async def porn(ctx): #send user a stop meme in a direct message
 @client.command()
 async def help(ctx):
     embed = discord.Embed()
-
-    embed.set_author(name="Garbage Man")
 
     embed.add_field(
         name=">catalog",
@@ -71,125 +96,186 @@ async def help(ctx):
         )
 
     embed.add_field(
+        name=">mute",
+        value="mute the bot",
+        inline=False
+        )
+
+    embed.add_field(
+        name='>invite',
+        value="send invite link to guild",
+        inline=False
+        )
+
+    embed.add_field(
         name=">suggest <text suggest (youtube link prefered)>",
         value="suggest a meme to add to the bot",
         inline=False
     )
 
-    embed.add_field(
-        name=">leave",
-        value="-",
-        inline=False
-        )
-
     embed.set_footer(text=ctx.author.name, icon_url=ctx.author.avatar_url)
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, delete_after=60)
+
+@client.command()
+async def join(ctx):
+    guild = ctx.guild.id
+    guild_voice = guilds[guild].voice
+    author_voice = ctx.message.author.voice
+
+    if author_voice:
+        if guild_voice:
+            await guild_voice.disconnect()
+        guilds[guild].voice = await author_voice.channel.connect()
+        return True
+    else:
+        await ctx.send(":stop_sign: **You're Not Connected to a Voice Channel**")
+        return False
+
+@client.command()
+async def leave(ctx):
+    guild = ctx.guild.id
+    guild_voice = guilds[guild].voice
+
+    if guild_voice:
+        await guild_voice.disconnect()
+        guilds[guild].PlayFlag = False
+        guilds[guild].voice = False
+        guilds[guild].queue = []
+    else:
+        await ctx.send(":stop_sign: **Not Connected to a Voice Channel**")
 
 @client.command()
 async def catalog(ctx): #print a catalog of memes in the database
     embed = discord.Embed()
-    embed.set_author(name="Garbage Rat")
 
-    for letter in string.ascii_lowercase:
-        embed.add_field(
-            name=letter.upper() + ":",
-            value=":arrow_forward: " + ", ".join(mDict[letter]),
-            inline=False
-            )
+    embed.add_field(
+        name=":rat: :book:",
+        value="[Catalog Link](https://docs.google.com/spreadsheets/d/1K6a-J7q8tnHO-aQQLWlczioM5s2lyp4KOiEbkjWEeQk/edit?usp=sharing)",
+        inline=False
+        )
     
-    await ctx.send(embed=embed, delete_after=120)
+    embed.set_footer(text=ctx.author.name, icon_url=ctx.author.avatar_url)
+    await ctx.send(embed=embed, delete_after=60)
 
 @client.command()
-@commands.cooldown(1, 1800, commands.BucketType.user)
-async def play(ctx, *, arg):
-    global queue_lit, PlayFlag
+async def play(ctx, *args):
+    guild = ctx.guild.id
+    guild_info = guilds[guild]
 
-    meme = arg.lower()
-
-    if meme not in mDict[meme[0]]:
-        await ctx.send(":stop_sign: **ERROR 404**")
-        play.reset_cooldown(ctx)
-    elif not ctx.author.voice:
-        await ctx.send(":stop_sign: **You aren't in a Voice Channel**") 
-        garbage.reset_cooldown(ctx)
-    elif PlayFlag:
-        await ctx.send(":arrows_counterclockwise: **Queued: **" + meme)
-        queue_list.append([ctx.author.voice.channel, arg])
+    if not guild_info.voice:
+        if not await join(ctx):
+            return
+    
+    if not guild_info.voice:
+        await ctx.send(":stop_sign: **Not Connected to Voice Channel**")
+    elif guild_info.MuteFlag:
+        await ctx.send(":stop_sign: **Currently Muted**")
+    elif len(guild_info.queue) >= 10:
+        await ctx.send(":stop_sign: **Queue too Long**")
     else:
-        await ctx.send(":white_check_mark: **Playing: **" + meme)
+        arg = " ".join(args)
+        key = arg[0].upper()
+        match = difflib.get_close_matches(arg, mDict[key], n=1, cutoff=0.2)
+        
+        meme = ""
+        for element in mDict[key]:
+            if element.lower() == arg.lower():
+                meme = element
+                break
 
-        queue_list.append([ctx.author.voice.channel, meme])
-        await play_meme()
+        if not meme and match:
+            meme = match[0]
+
+        if not meme:
+            await ctx.send(":stop_sign: **Error 404: **" + arg)
+        else:
+            guild_info.queue.append(meme)
+
+            if guild_info.PlayFlag:
+                await ctx.send(":arrows_counterclockwise: **Queued: **" + meme)
+            else:
+                await ctx.send(":white_check_mark: **Playing: **" + meme)
+                await check_queue(ctx, guild_info)
 
 @client.command()
-@commands.cooldown(1, 1800, commands.BucketType.user)
 async def garbage(ctx):
-    global queue_list, PlayFlag
-
     ls = []
     for key in mDict:
         ls.extend(mDict[key])
 
-    arg = random.choice(ls)
-
-    if not ctx.author.voice:
-        await ctx.send(":stop_sign: **You aren't in a Voice Channel**") 
-        garbage.reset_cooldown(ctx)
-    elif PlayFlag: 
-        await ctx.send(":arrows_counterclockwise: **Queued: **" + arg)
-        queue_list.append([ctx.author.voice.channel, arg])
-    else:
-        await ctx.send(":white_check_mark: **Garbage Selected**: " + arg)
-
-        queue_list.append([ctx.author.voice.channel, arg])
-        await play_meme()
+    await play(ctx, random.choice(ls))
 
 @client.command()
+@commands.has_role("Garbage")
+async def mute(ctx):
+    guild = ctx.guild.id
+    guild_info = guilds[guild]
+
+    if guild_info.MuteFlag:
+        guild_info.MuteFlag = False
+        await ctx.send(":white_check_mark: **Unmuted**")
+    else:
+        guild_info.MuteFlag = True
+        guild_info.queue = []
+        await ctx.send(":stop_sign: **Muted**")
+
+@client.command()
+async def invite(ctx):
+    channel = await ctx.author.create_dm()
+    embed = discord.Embed()
+    
+    embed.add_field(
+        name=":rat: :book:",
+        value="[Invite Link](https://discord.com/api/oauth2/authorize?client_id=814056074717691915&permissions=3148800&scope=bot)",
+        inline=False
+        )
+
+    embed.set_footer(text=ctx.author.name, icon_url=ctx.author.avatar_url)
+    await channel.send(embed=embed)
+
+@client.command()
+@commands.cooldown(5, 3600, commands.BucketType.user)
 async def suggest(ctx, *args): #store suggestions in seperate files
-    with open("./suggestion/" + str(datetime.datetime.now()) + " - " + ctx.author.name + ".txt", "w+") as filehandler:
-        for arg in args:
-            filehandler.write(arg + " ")
-        filehandler.write("\n")
+    owner = await client.fetch_user(OwnerID)
+    channel = await owner.create_dm()
+
+    await channel.send(":point_right: **%s: **" % (ctx.author) + " ".join(args))
     await ctx.send("**Thank you for the Garbage!**")
 
 @client.command()
-async def leave(ctx):
-    global voice
+@commands.is_owner()
+async def reload(ctx):
+    update.update()
 
-    if voice:
-        await voice.disconnect()
-        voice = False
-    else:
-        await ctx.send(":stop_sign: **Currently not Conncted to Voice Channel**")
+    global mDict, sList
+    mDict = load.memes() #load dictionary of memes
+    sList = load.stops() #load list of stops
 
-async def convert(secs):
-    min, sec = divmod(secs, 60)
-    hour, min = divmod(min, 60)
-    return "%02d:%02d" % (min, sec)
+    await ctx.send(":white_check_mark: **Files Reloaded**")
 
-async def play_meme():
-    global queue_list, voice, PlayFlag
+def convert(sec):
+    mins, secs = divmod(sec, 60)
+    hours, mins = divmod(mins, 60)
+    return "%02d:%02d:%02d" % (hours, mins, secs)
+        
+async def check_queue(ctx, guild_info):
+    while guild_info.queue:
+        guild_info.PlayFlag = True
+        guild_info.voice.play(discord.FFmpegPCMAudio("./mp3/" + guild_info.queue[0] + ".mp3"))
 
-    channel = queue_list[0][0]
-    meme = queue_list[0][1]
-    queue_list.pop(0)
+        while guild_info.voice.is_playing():
+            await asyncio.sleep(1)
+        guild_info.queue.pop(0)
+        await asyncio.sleep(3)
 
-    if not voice:
-        voice = await channel.connect()
-    elif voice != channel:
-        await voice.move_to(channel)
+    guild_info.PlayFlag = False
 
-    PlayFlag = True
-
-    voice.play(discord.FFmpegPCMAudio("./mp3/" + meme + ".mp3"))
-
-    while voice.is_playing():
+    for sec in range(60):
         await asyncio.sleep(1)
+        
+        if guild_info.queue:
+            return
 
-    if not queue_list:
-        PlayFlag = False
-    else:
-        time.sleep(3)
-        await play_meme()
-    
+    await leave(ctx)
+
 client.run(DiscordToken)
