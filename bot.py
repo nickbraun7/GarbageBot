@@ -18,6 +18,7 @@ print("Files Have Been Updated")
 mDict = load.memes() #load dictionary of memes
 sList = load.stops() #load list of stops
 
+#class with necessary information for each server
 class guild_info():
     PlayFlag = False
     MuteFlag = False
@@ -68,11 +69,17 @@ async def on_command_error(ctx, error):
 
     raise error
 
+"""
+Discord Command for a meme
+"""
 @client.command()
 async def porn(ctx): #send user a stop meme in a direct message
     channel = await ctx.author.create_dm()
     await channel.send(random.choice(sList))
 
+"""
+Discord Command help screen
+"""
 @client.command()
 async def help(ctx):
     embed = discord.Embed()
@@ -116,6 +123,9 @@ async def help(ctx):
     embed.set_footer(text=ctx.author.name, icon_url=ctx.author.avatar_url)
     await ctx.send(embed=embed, delete_after=60)
 
+"""
+Discord Command to join the author's current channel
+"""
 @client.command()
 async def join(ctx):
     guild = ctx.guild.id
@@ -131,6 +141,9 @@ async def join(ctx):
         await ctx.send(":stop_sign: **You're Not Connected to a Voice Channel**")
         return False
 
+"""
+Discord Command to leave the current channel
+"""
 @client.command()
 async def leave(ctx):
     guild = ctx.guild.id
@@ -144,8 +157,13 @@ async def leave(ctx):
     else:
         await ctx.send(":stop_sign: **Not Connected to a Voice Channel**")
 
+
+"""
+Discord Command which sends a link to a google spreadsheet
+of all the current memes loaded into the bot.
+"""
 @client.command()
-async def catalog(ctx): #print a catalog of memes in the database
+async def catalog(ctx):
     embed = discord.Embed()
 
     embed.add_field(
@@ -157,6 +175,11 @@ async def catalog(ctx): #print a catalog of memes in the database
     embed.set_footer(text=ctx.author.name, icon_url=ctx.author.avatar_url)
     await ctx.send(embed=embed, delete_after=60)
 
+"""
+Discord Command which allows the user to choose a meme
+from a list and play in a specific channel, adding the
+meme to a queue if the bot is currently playing.
+"""
 @client.command()
 async def play(ctx, *args):
     guild = ctx.guild.id
@@ -197,6 +220,10 @@ async def play(ctx, *args):
                 await ctx.send(":white_check_mark: **Playing: **" + meme)
                 await check_queue(ctx, guild_info)
 
+"""
+Discord Command to pull a random meme from
+the dictionary and play via the play command.
+"""
 @client.command()
 async def garbage(ctx):
     ls = []
@@ -205,6 +232,11 @@ async def garbage(ctx):
 
     await play(ctx, random.choice(ls))
 
+"""
+Discord Command to mute the bot, which stops
+all incomming play commands and removes the
+current queue.
+"""
 @client.command()
 @commands.has_role("Garbage")
 async def mute(ctx):
@@ -219,6 +251,11 @@ async def mute(ctx):
         guild_info.queue = []
         await ctx.send(":stop_sign: **Muted**")
 
+"""
+Discord Command which sends a invite link to the
+author via DM's if they want to add the bot to
+their guild.
+"""
 @client.command()
 async def invite(ctx):
     channel = await ctx.author.create_dm()
@@ -233,15 +270,24 @@ async def invite(ctx):
     embed.set_footer(text=ctx.author.name, icon_url=ctx.author.avatar_url)
     await channel.send(embed=embed)
 
+"""
+Discord Command to suggest a meme to add, sends the
+suggestion to me via discord DM
+"""
 @client.command()
 @commands.cooldown(5, 3600, commands.BucketType.user)
-async def suggest(ctx, *args): #store suggestions in seperate files
+async def suggest(ctx, *args):
     owner = await client.fetch_user(OwnerID)
     channel = await owner.create_dm()
 
     await channel.send(":point_right: **%s: **" % (ctx.author) + " ".join(args))
     await ctx.send("**Thank you for the Garbage!**")
 
+"""
+Discord Command to allow the owner to reload the
+current dictionary, incase an mp3 was added while
+the bot is running.
+"""
 @client.command()
 @commands.is_owner()
 async def reload(ctx):
@@ -253,11 +299,16 @@ async def reload(ctx):
 
     await ctx.send(":white_check_mark: **Files Reloaded**")
 
+
 def convert(sec):
     mins, secs = divmod(sec, 60)
     hours, mins = divmod(mins, 60)
     return "%02d:%02d:%02d" % (hours, mins, secs)
         
+"""
+Function to check the queue and disconnect the
+bot if 60 seconds without use has passed.
+"""
 async def check_queue(ctx, guild_info):
     while guild_info.queue:
         guild_info.PlayFlag = True
